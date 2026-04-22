@@ -58,7 +58,12 @@ taskStatus findIDFieldData(FILE *f,uint32_t *size , const char* IDName)
     }
 
     rewind(f); //Sets file to the beginning
-    fseek(f, 12, SEEK_CUR); //Skip wav header
+    if (fseek(f, 12, SEEK_CUR)) //Skip wav header
+    {
+        perror("findIDFieldData: Error while seeking in file.");
+        return FAILED;
+
+    } 
 
     uint8_t buffer[4]; //Buffer for reading field name
     uint8_t sizeBuffer[4]; //Buffer for reading size field
@@ -67,7 +72,7 @@ taskStatus findIDFieldData(FILE *f,uint32_t *size , const char* IDName)
     do 
     {
     //Saving ID and Size into buffer
-        if (fread(buffer, 1, 4, f) != 4 || fread(sizeBuffer, 1, 4, f) != 1)
+        if (fread(buffer, 1, 4, f) != 4 || fread(sizeBuffer, 1, 4, f) != 4)
         {
         //Checking for end of file.
             if (feof(f))
@@ -79,16 +84,21 @@ taskStatus findIDFieldData(FILE *f,uint32_t *size , const char* IDName)
             perror("findIDField: Error while reading file");
             return FAILED;
         }
+        *size = sizeBuffer[0] | (sizeBuffer[1] << 8) | (sizeBuffer[2] << 16) | (sizeBuffer[3] << 24);
 
     //If ID Field doesn't match the field which was read we skip the data
         if (memcmp(buffer, IDName, 4) != 0)
         {
         //Since wav chunks start always on an even byte we need to add a padding byte if modulo 2 leaves doesn't end in 0. For example: size of data is 11 module(%) 2 = 1 -> padding byte needed
-            uint32_t *size = sizeBuffer[0] | sizeBuffer[1] << 8 | sizeBuffer[1] << 16 | sizeBuffer[3] << 24;
+            
             uint32_t skip = *size;
             //Here we try modulo 2
             if (skip % 2 != 0) skip++;
-            fseek(f, skip, SEEK_CUR);
+            if (fseek(f, skip, SEEK_CUR))
+            {
+                perror("findIDFieldData: Error skipping in file.");
+                return FAILED;
+            }
         }
 
     } while (memcmp(buffer, IDName, 4) != 0);
@@ -130,7 +140,14 @@ taskStatus getFMTHeader(FILE *f, struct fmtHeader *header)
     //If the size of fmt is higher than the default 16 we will skip it for now
     if (size > 16)
     {
-        fseek(f, size - 16, SEEK_CUR);
+        //Don't forget the padding byte :)
+        int skip = size - 16;
+        if (skip % 2 != 0) skip++;
+        if (fseek(f, skip, SEEK_CUR))
+        {
+            perror("getFMTHeader: Error seeking in file.");
+            return FAILED;
+        }
     }
 
 //Now it is time to put the read data in our struct.
@@ -159,13 +176,13 @@ taskStatus getPCMFrame(FILE *f, struct fmtHeader *header, uint8_t* frameBuffer, 
 {
     if (header->audioFormat != 1)
     {
-        fprintf(stdout, "getPCMSample: IEEE Float is not supported yet.\n");
+        fprintf(stdout, "getPCMFrame: IEEE Float is not supported yet.\n");
         return FAILED;
     }
     uint16_t blockAlign = header->blockAlign;
     if (bufferSize < blockAlign)
     {
-        fprintf(stdout, "getPCMSamples: Can't read samples since buffer is smaller than blockalign\n");
+        fprintf(stdout, "getPCMFrame: Can't read samples since buffer is smaller than blockalign\n");
         return FAILED;
     }
 
@@ -174,12 +191,12 @@ taskStatus getPCMFrame(FILE *f, struct fmtHeader *header, uint8_t* frameBuffer, 
     {
         if (feof(f))
         {
-            fprintf(stdout, "getPCMSamples: Couldn't get sample. End of file was reached!\n");
+            fprintf(stdout, "getPCMFrame: Couldn't get sample. End of file was reached!\n");
             return FAILED;
         }
         else
         {
-            perror("getPCMSamples: Couldn't get samples. Error reading File");
+            perror("getPCMFrame: Couldn't get samples. Error reading File");
             return FAILED;
         }
     }
@@ -200,14 +217,14 @@ size_t getPCMFramesBuffer(FILE *f, struct fmtHeader *header ,struct pcmBuffer *b
 
     if (header->audioFormat != 1)
     {
-        fprintf(stdout, "getPCMSamplesBuffer: IEEE Float is not supported yet.\n");
+        fprintf(stdout, "getPCMFramesBuffer: IEEE Float is not supported yet.\n");
         return 0;
     }
     //Check if one whole frame even fits into buffer
     uint16_t blockAlign = header->blockAlign;
     if (buffer->capacity < blockAlign)
     {
-        fprintf(stdout, "getPCMSamplesBuffer: Can't get samples since buffer size is smaller than blockalign!\n");
+        fprintf(stdout, "getPCMFramesBuffer: Can't get samples since buffer size is smaller than blockalign!\n");
         return 0;
     }
     //Trying to completly fill buffer and keeping block align in mind. Since the end result is an integer we dont have to worry about decimal points
@@ -228,7 +245,7 @@ size_t getPCMFramesBuffer(FILE *f, struct fmtHeader *header ,struct pcmBuffer *b
         }
         else
         {
-            perror("getPCMSamplesBuffer: Error reading samples");
+            perror("getPCMFramesBuffer: Error reading samples");
             return 0;
         }
     }
