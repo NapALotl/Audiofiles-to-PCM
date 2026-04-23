@@ -8,7 +8,8 @@
 //Checks if the given file is a real wav file
 taskStatus validateWAVFile(FILE *f);
 
-//Finds ID Fields in a wav field and puts the file at the position of data start
+//Finds ID Fields in a wav field and puts the file at the position of data start, saves the size of datablock in uint32_t size
+    //For Playback we need to find "fmt " and "data"
 taskStatus findIDFieldData(FILE *f,uint32_t *size ,const char* IDName);
 
 //Searches with findIDField "fmt " field and saves data into fmtHeader struct
